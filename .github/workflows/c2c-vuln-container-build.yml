@@ -40,11 +40,9 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       
-      # Step 3: Login to ACR using the Azure session
+      # Step 3: Login to ACR using the Azure session (az acr login works with OIDC)
       - name: ACR Login
-        uses: azure/docker-login@v2
-        with:
-          login-server: ${{ env.ACR_NAME }}.azurecr.io
+        run: az acr login --name ${{ env.ACR_NAME }}
       
       # Step 4: Deterministic tags enable C2C to correlate: commit → workflow → image
       - name: Generate Image Tags
