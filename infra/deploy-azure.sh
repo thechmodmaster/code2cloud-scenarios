@@ -42,7 +42,7 @@ NODE_COUNT="${AKS_NODE_COUNT:-1}"
 NODE_SIZE="${AKS_NODE_SIZE:-Standard_B2s}"
 
 # GitHub Configuration
-GITHUB_REPO="${GITHUB_REPO:-thechmodmaster/code2cloud-scenarios}"
+GITHUB_REPO="${GITHUB_REPO:-eyalsofer_microsoft/code2cloud-scenarios}"
 GITHUB_BRANCH="${GITHUB_BRANCH:-main}"
 
 echo -e "${BLUE}============================================================================${NC}"

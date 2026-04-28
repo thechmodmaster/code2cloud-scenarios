@@ -18,7 +18,7 @@ FROM node:16-alpine
 
 # OCI Image Labels for Code-to-Cloud correlation
 # These labels enable scanners to link this image back to source code
-LABEL org.opencontainers.image.source="https://github.com/thechmodmaster/code2cloud-scenarios"
+LABEL org.opencontainers.image.source="https://github.com/eyalsofer_microsoft/code2cloud-scenarios"
 LABEL org.opencontainers.image.description="Code-to-Cloud vulnerable test scenario - INTENTIONAL VULNERABILITIES FOR TESTING"
 LABEL org.opencontainers.image.title="c2c-vuln-app"
 LABEL org.opencontainers.image.vendor="code2cloud-test"
