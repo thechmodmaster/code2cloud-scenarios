@@ -39,7 +39,7 @@ NAMESPACE="c2c-scenarios"
 
 # AKS Configuration
 NODE_COUNT="${AKS_NODE_COUNT:-1}"
-NODE_SIZE="${AKS_NODE_SIZE:-Standard_B2s}"
+NODE_SIZE="${AKS_NODE_SIZE:-Standard_D2s_v4}"
 
 # GitHub Configuration
 GITHUB_REPO="${GITHUB_REPO:-eyalsofer_microsoft/code2cloud-scenarios}"
