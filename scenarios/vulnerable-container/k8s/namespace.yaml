@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: c2c-scenarios
+  labels:
+    purpose: c2c-testing
+    managed-by: code2cloud-scenarios
+    environment: test
+  annotations:
+    description: "Namespace for Code-to-Cloud security testing scenarios"

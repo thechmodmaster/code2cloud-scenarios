@@ -1,0 +1,89 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vuln-app
+  namespace: c2c-scenarios
+  labels:
+    app: vuln-app
+    scenario: c2c-vulnerability-test
+    vulnerability: ajv-CVE-2020-15366
+  annotations:
+    c2c.test/purpose: "vulnerability-detection-testing"
+    c2c.test/vulnerability: "CVE-2020-15366"
+    c2c.test/source-repo: "thechmodmaster/code2cloud-scenarios"
+    c2c.test/package: "ajv@6.12.2"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vuln-app
+  template:
+    metadata:
+      labels:
+        app: vuln-app
+        scenario: c2c-vulnerability-test
+        vulnerability: ajv-CVE-2020-15366
+      annotations:
+        c2c.test/purpose: "vulnerability-detection-testing"
+        c2c.test/vulnerability: "CVE-2020-15366"
+    spec:
+      containers:
+      - name: vuln-app
+        # Placeholder image - workflow will update with digest-based reference
+        image: c2cscenarioacr.azurecr.io/c2cscenario/vuln-app:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 3000
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "3000"
+        - name: NODE_ENV
+          value: "production"
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vuln-app
+  namespace: c2c-scenarios
+  labels:
+    app: vuln-app
+    scenario: c2c-vulnerability-test
+spec:
+  type: ClusterIP
+  selector:
+    app: vuln-app
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: 3000
