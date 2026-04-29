@@ -27,6 +27,7 @@ jobs:
     permissions:
       id-token: write    # Required for OIDC
       contents: read     # Required for checkout
+      security-events: write    # Required for uploading SARIF scan results
     
     steps:
       # Step 1: Checkout the repository — C2C maps this repo to the workflow run
@@ -172,6 +173,34 @@ jobs:
           echo "full_uri=${IMAGE_URI}@${DIGEST}" >> $GITHUB_OUTPUT
           
           echo "📌 Captured vuln-api immutable digest: $DIGEST"
+      
+      # C2C Build Card: Scan image for vulnerabilities — results uploaded to GitHub Code Scanning
+      # This enables C2C to map: pipeline → vulnerability assessment (Build card)
+      - name: Scan vuln-app Image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ steps.image-tags.outputs.COMMIT_TAG }}'
+          format: 'sarif'
+          output: 'vuln-app-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+      
+      # C2C Build Card: Scan image for vulnerabilities — results uploaded to GitHub Code Scanning
+      # This enables C2C to map: pipeline → vulnerability assessment (Build card)
+      - name: Scan vuln-api Image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME_API }}:${{ steps.api-image-tags.outputs.COMMIT_TAG }}'
+          format: 'sarif'
+          output: 'vuln-api-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+      
+      # Upload both SARIF files so C2C connector discovers build-time vulnerability findings
+      - name: Upload Scan Results to GitHub
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: '.'
+          category: 'container-scanning'
       
       # Step 10: This summary is what C2C systems parse from workflow logs
       - name: Print Correlation Summary
