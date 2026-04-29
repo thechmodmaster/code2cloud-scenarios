@@ -194,13 +194,20 @@ jobs:
           output: 'vuln-api-results.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM'
       
-      # Upload both SARIF files so C2C connector discovers build-time vulnerability findings
-      - name: Upload Scan Results to GitHub
+      # Upload SARIF files separately with unique categories (required by CodeQL Action)
+      - name: Upload vuln-app Scan Results
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: '.'
-          category: 'container-scanning'
+          sarif_file: 'vuln-app-results.sarif'
+          category: 'container-scanning-vuln-app'
+
+      - name: Upload vuln-api Scan Results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'vuln-api-results.sarif'
+          category: 'container-scanning-vuln-api'
       
       # Step 10: This summary is what C2C systems parse from workflow logs
       - name: Print Correlation Summary
