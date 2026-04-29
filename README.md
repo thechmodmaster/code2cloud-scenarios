@@ -25,7 +25,7 @@ This repository contains **INTENTIONALLY VULNERABLE** dependencies for security 
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  GitHub Repository (eyalsofer_microsoft/code2cloud-scenarios)            │
+│  GitHub Repository (thechmodmaster/code2cloud-scenarios)            │
 │  └─ package.json: ajv@6.12.2 (CVE-2020-15366)                       │
 └────────────────────────┬────────────────────────────────────────────┘
                          │
@@ -73,7 +73,7 @@ Before getting started, ensure you have:
 - **GitHub CLI** (`gh`) installed (optional, for managing secrets)
 - **Bash shell** (WSL, Git Bash, or Linux/macOS terminal)
 - An **Azure subscription** with Owner or Contributor + User Access Administrator permissions
-- A **GitHub repository** (fork or clone of `eyalsofer_microsoft/code2cloud-scenarios`)
+- A **GitHub repository** (fork or clone of `thechmodmaster/code2cloud-scenarios`)
 - Permissions to configure GitHub repository secrets
 
 ---
@@ -82,7 +82,7 @@ Before getting started, ensure you have:
 
 | Component | Configuration |
 |-----------|---------------|
-| **GitHub Repo** | `eyalsofer_microsoft/code2cloud-scenarios` |
+| **GitHub Repo** | `thechmodmaster/code2cloud-scenarios` |
 | **Azure Subscription** | Code2Cloud (`2484489b-da82-4300-9f01-406602c2efbc`) |
 | **Tenant Domain** | `7d45cbc7657f85d6a9.onmicrosoft.com` |
 | **Region** | East US |
@@ -118,7 +118,7 @@ chmod +x infra/deploy-azure.sh
 - ✅ Azure Container Registry: `c2cscenarioacr` (Standard SKU)
 - ✅ AKS Cluster: `c2cscenario-aks` (1 node, Standard_DS2_v2)
 - ✅ Managed Identity: `c2cscenario-github-identity`
-- ✅ Federated Credential: Configured for GitHub Actions OIDC (repo: `eyalsofer_microsoft/code2cloud-scenarios`)
+- ✅ Federated Credential: Configured for GitHub Actions OIDC (repo: `thechmodmaster/code2cloud-scenarios`)
 - ✅ Role Assignments:
   - `AcrPush` on ACR (for image push)
   - `Azure Kubernetes Service Cluster User Role` on AKS (for deployment)
@@ -190,7 +190,7 @@ After the workflow completes successfully:
 3. Go to **Environment settings** → **Add environment** → **GitHub**
 4. Follow the connector setup wizard:
    - Authenticate to GitHub
-   - Select the repository: `eyalsofer_microsoft/code2cloud-scenarios`
+   - Select the repository: `thechmodmaster/code2cloud-scenarios`
    - Grant required permissions (read repository metadata, workflows, packages)
 5. Wait for the connector to sync (typically 5-15 minutes)
 
@@ -268,7 +268,7 @@ kubectl get pods -n c2c-scenarios -l app=vuln-app -o jsonpath='{.items[0].spec.c
 After creating the GitHub connector in Microsoft Defender for Cloud, verify these correlations:
 
 #### Repository Discovery
-- [ ] Repository `eyalsofer_microsoft/code2cloud-scenarios` appears in Code-to-Cloud views
+- [ ] Repository `thechmodmaster/code2cloud-scenarios` appears in Code-to-Cloud views
 - [ ] Repository metadata is accurate (commit history, contributors)
 - [ ] `package.json` with `ajv@6.12.2` is visible in source code view
 

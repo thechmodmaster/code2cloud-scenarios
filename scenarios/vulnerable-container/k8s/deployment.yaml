@@ -11,7 +11,7 @@ metadata:
   annotations:
     c2c.test/purpose: "vulnerability-detection-testing"
     c2c.test/vulnerability: "CVE-2020-15366"
-    c2c.test/source-repo: "eyalsofer_microsoft/code2cloud-scenarios"
+    c2c.test/source-repo: "thechmodmaster/code2cloud-scenarios"
     c2c.test/package: "ajv@6.12.2"
 spec:
   replicas: 1
