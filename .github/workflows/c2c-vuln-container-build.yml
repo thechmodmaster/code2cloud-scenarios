@@ -15,6 +15,7 @@ on:
 env:
   ACR_NAME: c2cscenarioacr
   IMAGE_NAME: c2cscenario/vuln-app
+  IMAGE_NAME_API: c2cscenario/vuln-api
   RESOURCE_GROUP: c2cscenario-rg
   AKS_CLUSTER: c2cscenario-aks
   K8S_NAMESPACE: c2c-scenarios
@@ -106,7 +107,73 @@ jobs:
           
           echo "📌 Captured immutable digest: $DIGEST"
       
-      # Step 7: This summary is what C2C systems parse from workflow logs
+      # Step 7: Generate tags for the second image (vuln-api)
+      - name: Generate API Image Tags
+        id: api-image-tags
+        run: |
+          echo "COMMIT_TAG=${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "RUN_TAG=run-${{ github.run_id }}" >> $GITHUB_OUTPUT
+          echo "VULN_TAG_AJV=vuln-ajv-CVE-2020-15366" >> $GITHUB_OUTPUT
+          echo "VULN_TAG_LODASH=vuln-lodash-CVE-2020-8203" >> $GITHUB_OUTPUT
+          echo "LATEST_TAG=latest" >> $GITHUB_OUTPUT
+          echo "Generated tags for vuln-api (C2C correlation):"
+          echo "  - Commit SHA: ${{ github.sha }}"
+          echo "  - Workflow Run: run-${{ github.run_id }}"
+          echo "  - Vulnerability 1: vuln-ajv-CVE-2020-15366"
+          echo "  - Vulnerability 2: vuln-lodash-CVE-2020-8203"
+          echo "  - Latest: latest"
+      
+      # Step 8: Build vuln-api with OCI labels — same repo+run correlation as vuln-app
+      - name: Build and Push API Docker Image
+        id: build-push-api
+        run: |
+          IMAGE_URI="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME_API }}"
+          
+          # Build with multiple tags and OCI annotations
+          docker build \
+            --tag "${IMAGE_URI}:${{ steps.api-image-tags.outputs.COMMIT_TAG }}" \
+            --tag "${IMAGE_URI}:${{ steps.api-image-tags.outputs.RUN_TAG }}" \
+            --tag "${IMAGE_URI}:${{ steps.api-image-tags.outputs.VULN_TAG_AJV }}" \
+            --tag "${IMAGE_URI}:${{ steps.api-image-tags.outputs.VULN_TAG_LODASH }}" \
+            --tag "${IMAGE_URI}:${{ steps.api-image-tags.outputs.LATEST_TAG }}" \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --label "org.opencontainers.image.ref.name=${{ github.ref_name }}" \
+            --label "com.c2c.workflow.run-id=${{ github.run_id }}" \
+            --label "com.c2c.workflow.run-url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --label "com.c2c.vulnerability.scenario=ajv-CVE-2020-15366,lodash-CVE-2020-8203" \
+            ./scenarios/vulnerable-api
+          
+          # Push all tags
+          docker push "${IMAGE_URI}:${{ steps.api-image-tags.outputs.COMMIT_TAG }}"
+          docker push "${IMAGE_URI}:${{ steps.api-image-tags.outputs.RUN_TAG }}"
+          docker push "${IMAGE_URI}:${{ steps.api-image-tags.outputs.VULN_TAG_AJV }}"
+          docker push "${IMAGE_URI}:${{ steps.api-image-tags.outputs.VULN_TAG_LODASH }}"
+          docker push "${IMAGE_URI}:${{ steps.api-image-tags.outputs.LATEST_TAG }}"
+          
+          echo "✅ API image pushed with 5 tags and full C2C correlation labels"
+      
+      # Step 9: Capture the immutable digest for vuln-api
+      - name: Capture API Image Digest
+        id: api-digest
+        run: |
+          IMAGE_URI="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME_API }}"
+          
+          # Inspect the image and extract the digest
+          FULL_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE_URI}:${{ steps.api-image-tags.outputs.COMMIT_TAG }}")
+          DIGEST=$(echo "$FULL_DIGEST" | cut -d'@' -f2)
+          
+          # Export to environment for subsequent steps
+          echo "API_IMAGE_DIGEST=$DIGEST" >> $GITHUB_ENV
+          echo "API_FULL_IMAGE_URI=${IMAGE_URI}@${DIGEST}" >> $GITHUB_ENV
+          
+          # Also set as step output
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+          echo "full_uri=${IMAGE_URI}@${DIGEST}" >> $GITHUB_OUTPUT
+          
+          echo "📌 Captured vuln-api immutable digest: $DIGEST"
+      
+      # Step 10: This summary is what C2C systems parse from workflow logs
       - name: Print Correlation Summary
         run: |
           echo "============================================"
@@ -115,14 +182,23 @@ jobs:
           echo "Repository:    ${{ github.repository }}"
           echo "Commit SHA:    ${{ github.sha }}"
           echo "Workflow Run:  ${{ github.run_id }}"
-          echo "Image URI:     ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          echo "Image Digest:  ${{ steps.digest.outputs.digest }}"
-          echo "Full URI:      ${{ steps.digest.outputs.full_uri }}"
+          echo "--------------------------------------------"
+          echo "Image 1 (vuln-app):"
+          echo "  URI:         ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          echo "  Digest:      ${{ steps.digest.outputs.digest }}"
+          echo "  Full URI:    ${{ steps.digest.outputs.full_uri }}"
+          echo "  Vulnerability: ajv@6.12.2 (CVE-2020-15366)"
+          echo "--------------------------------------------"
+          echo "Image 2 (vuln-api):"
+          echo "  URI:         ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME_API }}:${{ github.sha }}"
+          echo "  Digest:      ${{ steps.api-digest.outputs.digest }}"
+          echo "  Full URI:    ${{ steps.api-digest.outputs.full_uri }}"
+          echo "  Vulnerabilities: ajv@6.12.2 (CVE-2020-15366), lodash@4.17.15 (CVE-2020-8203)"
+          echo "--------------------------------------------"
           echo "ACR:           ${{ env.ACR_NAME }}.azurecr.io"
-          echo "Vulnerability: ajv@6.12.2 (CVE-2020-15366)"
           echo "============================================"
       
-      # Step 8: Set AKS context for kubectl commands (conditional)
+      # Step 11: Set AKS context for kubectl commands (conditional)
       - name: Set AKS Context
         if: github.event.inputs.deploy_to_aks == 'true'
         uses: azure/aks-set-context@v4
@@ -130,27 +206,40 @@ jobs:
           cluster-name: ${{ env.AKS_CLUSTER }}
           resource-group: ${{ env.RESOURCE_GROUP }}
       
-      # Step 9: Deploy using digest (not tag) so C2C can correlate: K8s workload → exact image → exact vulnerability
+      # Step 12: Deploy both images using digest references for full C2C correlation
       - name: Deploy to AKS
         if: github.event.inputs.deploy_to_aks == 'true'
         run: |
-          # First, apply the K8s manifests
+          # Apply K8s manifests for vuln-app
           kubectl apply -f scenarios/vulnerable-container/k8s/ -n ${{ env.K8S_NAMESPACE }}
           
-          # Then patch the deployment to use the exact image with digest
+          # Apply K8s manifests for vuln-api
+          kubectl apply -f scenarios/vulnerable-api/k8s/ -n ${{ env.K8S_NAMESPACE }}
+          
+          # Patch vuln-app deployment to use the exact image with digest
           kubectl set image deployment/vuln-app \
             vuln-app=${{ steps.digest.outputs.full_uri }} \
             -n ${{ env.K8S_NAMESPACE }}
           
-          # Wait for the rollout to complete
-          echo "⏳ Waiting for deployment rollout..."
+          # Patch vuln-api deployment to use the exact image with digest
+          kubectl set image deployment/vuln-api \
+            vuln-api=${{ steps.api-digest.outputs.full_uri }} \
+            -n ${{ env.K8S_NAMESPACE }}
+          
+          # Wait for both rollouts to complete
+          echo "⏳ Waiting for vuln-app deployment rollout..."
           kubectl rollout status deployment/vuln-app \
             -n ${{ env.K8S_NAMESPACE }} \
             --timeout=120s
           
-          echo "✅ Deployment complete using digest-based image reference"
+          echo "⏳ Waiting for vuln-api deployment rollout..."
+          kubectl rollout status deployment/vuln-api \
+            -n ${{ env.K8S_NAMESPACE }} \
+            --timeout=120s
+          
+          echo "✅ Both deployments complete using digest-based image references"
       
-      # Step 10: Verify the deployed pod uses the exact image URI/digest we just pushed
+      # Step 13: Verify both deployed pods use the exact image URI/digest
       - name: Verify Deployment
         if: github.event.inputs.deploy_to_aks == 'true'
         run: |
@@ -158,24 +247,32 @@ jobs:
           kubectl get pods -n ${{ env.K8S_NAMESPACE }} -o wide
           
           echo ""
-          echo "🔍 Deployed image URI:"
+          echo "🔍 Deployed image URIs:"
+          echo "  vuln-app:"
           kubectl get deployment vuln-app \
             -n ${{ env.K8S_NAMESPACE }} \
             -o jsonpath='{.spec.template.spec.containers[0].image}'
           echo ""
-          
-          # Verify the digest matches what we pushed
-          DEPLOYED_IMAGE=$(kubectl get deployment vuln-app \
+          echo "  vuln-api:"
+          kubectl get deployment vuln-api \
             -n ${{ env.K8S_NAMESPACE }} \
-            -o jsonpath='{.spec.template.spec.containers[0].image}')
+            -o jsonpath='{.spec.template.spec.containers[0].image}'
+          echo ""
           
-          if [[ "$DEPLOYED_IMAGE" == *"@sha256:"* ]]; then
-            echo "✅ Deployment uses digest-based reference (C2C-compliant)"
-          else
-            echo "⚠️  Warning: Deployment uses tag-based reference"
-          fi
+          # Verify digests for both deployments
+          for DEPLOY in vuln-app vuln-api; do
+            DEPLOYED_IMAGE=$(kubectl get deployment $DEPLOY \
+              -n ${{ env.K8S_NAMESPACE }} \
+              -o jsonpath='{.spec.template.spec.containers[0].image}')
+            
+            if [[ "$DEPLOYED_IMAGE" == *"@sha256:"* ]]; then
+              echo "✅ $DEPLOY uses digest-based reference (C2C-compliant)"
+            else
+              echo "⚠️  Warning: $DEPLOY uses tag-based reference"
+            fi
+          done
       
-      # Step 11: Export outputs for GitHub UI and downstream jobs
+      # Step 14: Export outputs for GitHub UI and downstream jobs
       - name: Export Outputs
         if: always()
         run: |
@@ -183,44 +280,58 @@ jobs:
           cat >> $GITHUB_STEP_SUMMARY <<EOF
           ## 🐳 C2C Container Build & Deploy Summary
           
-          ### Image Details
+          ### Image 1: vuln-app
           | Property | Value |
           |----------|-------|
           | **Image URI** | \`${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}\` |
           | **Image Digest** | \`${{ steps.digest.outputs.digest }}\` |
           | **Full URI** | \`${{ steps.digest.outputs.full_uri }}\` |
-          | **ACR** | \`${{ env.ACR_NAME }}.azurecr.io\` |
+          | **Vulnerability** | ajv@6.12.2 (CVE-2020-15366) |
           
-          ### Tags Applied
+          ### Image 2: vuln-api
+          | Property | Value |
+          |----------|-------|
+          | **Image URI** | \`${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME_API }}:${{ github.sha }}\` |
+          | **Image Digest** | \`${{ steps.api-digest.outputs.digest }}\` |
+          | **Full URI** | \`${{ steps.api-digest.outputs.full_uri }}\` |
+          | **Vulnerabilities** | ajv@6.12.2 (CVE-2020-15366), lodash@4.17.15 (CVE-2020-8203) |
+          
+          ### Tags Applied (both images)
           - \`${{ github.sha }}\` (commit SHA)
           - \`run-${{ github.run_id }}\` (workflow run ID)
-          - \`vuln-ajv-CVE-2020-15366\` (vulnerability scenario)
+          - \`vuln-ajv-CVE-2020-15366\` (shared vulnerability scenario)
           - \`latest\` (convenience tag)
+          - \`vuln-lodash-CVE-2020-8203\` (vuln-api only)
           
-          ### C2C Correlation Chain
+          ### C2C Multi-Image Correlation Chain
           | Step | Value |
           |------|-------|
           | **Repository** | \`${{ github.repository }}\` |
           | **Commit SHA** | [\`${{ github.sha }}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |
           | **Workflow Run** | [\`${{ github.run_id }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
-          | **Container Image** | \`${{ steps.digest.outputs.full_uri }}\` |
-          | **Vulnerability** | ajv@6.12.2 (CVE-2020-15366) |
+          | **Image 1 (vuln-app)** | \`${{ steps.digest.outputs.full_uri }}\` |
+          | **Image 2 (vuln-api)** | \`${{ steps.api-digest.outputs.full_uri }}\` |
+          | **Shared Vuln** | ajv@6.12.2 (CVE-2020-15366) |
+          | **API-only Vuln** | lodash@4.17.15 (CVE-2020-8203) |
           
           ### Deployment Status
           - **AKS Deployment**: ${{ github.event.inputs.deploy_to_aks == 'true' && '✅ Enabled' || '⏭️  Skipped' }}
           - **Cluster**: \`${{ env.AKS_CLUSTER }}\`
           - **Namespace**: \`${{ env.K8S_NAMESPACE }}\`
+          - **Deployments**: vuln-app, vuln-api
           
           ---
           
-          ### 🔗 C2C Mapping Flow
+          ### 🔗 C2C Multi-Image Mapping Flow
           \`\`\`
-          GitHub Repo → Workflow → Image Digest → AKS Workload → Azure Resources
+          GitHub Repo → Workflow Run → Image 1 (vuln-app) → AKS Workload → CVE-2020-15366
+                                     → Image 2 (vuln-api) → AKS Workload → CVE-2020-15366 + CVE-2020-8203
           \`\`\`
           
-          This workflow enables Code2Cloud to trace:
-          1. **Source code** (commit SHA) → **Build pipeline** (workflow run)
-          2. **Build pipeline** → **Container image** (immutable digest)
-          3. **Container image** → **Deployed workload** (K8s deployment)
-          4. **Deployed workload** → **Vulnerabilities** (CVE-2020-15366 in ajv@6.12.2)
+          This workflow enables Code2Cloud to correlate:
+          1. **Multiple images** from the **same pipeline run** (shared run ID)
+          2. **Multiple images** from the **same repo** (shared commit SHA)
+          3. **Shared vulnerabilities** across containers (ajv CVE-2020-15366)
+          4. **Unique vulnerabilities** per container (lodash CVE-2020-8203 in vuln-api)
+          5. **Source code** → **Build pipeline** → **Container images** → **K8s workloads**
           EOF
