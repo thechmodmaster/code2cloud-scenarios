@@ -409,3 +409,50 @@ jobs:
           4. **Unique vulnerabilities** per container (lodash CVE-2020-8203 in vuln-api)
           5. **Source code** → **Build pipeline** → **Container images** → **K8s workloads**
           EOF
+
+  defender-cli-scan:
+    needs: build-push-deploy
+    runs-on: [self-hosted, linux, x64, c2c-runner]
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to ACR
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Pull vuln-app image
+        run: docker pull ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:vuln-ajv-CVE-2020-15366
+
+      - name: Pull vuln-api image
+        run: docker pull ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME_API }}:vuln-ajv-CVE-2020-15366
+
+      - name: Download Defender for Cloud CLI
+        run: |
+          curl -L -o defender "https://aka.ms/defender-cli_linux-x64" && chmod +x defender
+
+      - name: Run Defender CLI Scan — vuln-app
+        continue-on-error: true
+        env:
+          DEFENDER_TENANT_ID: ${{ secrets.DEFENDER_TENANT_ID }}
+          DEFENDER_CLIENT_ID: ${{ secrets.DEFENDER_CLIENT_ID }}
+          DEFENDER_CLIENT_SECRET: ${{ secrets.DEFENDER_CLIENT_SECRET }}
+        run: |
+          ./defender scan image '${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:vuln-ajv-CVE-2020-15366'
+
+      - name: Run Defender CLI Scan — vuln-api
+        continue-on-error: true
+        env:
+          DEFENDER_TENANT_ID: ${{ secrets.DEFENDER_TENANT_ID }}
+          DEFENDER_CLIENT_ID: ${{ secrets.DEFENDER_CLIENT_ID }}
+          DEFENDER_CLIENT_SECRET: ${{ secrets.DEFENDER_CLIENT_SECRET }}
+        run: |
+          ./defender scan image '${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME_API }}:vuln-ajv-CVE-2020-15366'
