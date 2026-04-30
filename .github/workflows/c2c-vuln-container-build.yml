@@ -33,7 +33,45 @@ jobs:
       # Step 1: Checkout the repository — C2C maps this repo to the workflow run
       - name: Checkout repository
         uses: actions/checkout@v4
-      
+
+      # C2C Build Card (source scan): Trivy fs against the source tree of vuln-app.
+      # Runs BEFORE docker build so findings are attributed to the BUILD phase
+      # (manifests, package.json, lockfiles), not the produced image.
+      - name: Trivy FS Scan — vuln-app source
+        if: always()
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: './scenarios/vulnerable-container'
+          format: 'sarif'
+          output: 'trivy-fs-vuln-app.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Upload Trivy FS Scan — vuln-app
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-fs-vuln-app.sarif'
+          category: 'trivy-fs-vuln-app'
+
+      # C2C Build Card (source scan): Trivy fs against the source tree of vuln-api.
+      - name: Trivy FS Scan — vuln-api source
+        if: always()
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: './scenarios/vulnerable-api'
+          format: 'sarif'
+          output: 'trivy-fs-vuln-api.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Upload Trivy FS Scan — vuln-api
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-fs-vuln-api.sarif'
+          category: 'trivy-fs-vuln-api'
+
       # Step 2: OIDC login — no static secrets. C2C correlates the identity to this workflow.
       - name: Azure Login via OIDC
         uses: azure/login@v2
