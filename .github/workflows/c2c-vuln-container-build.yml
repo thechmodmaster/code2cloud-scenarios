@@ -11,6 +11,19 @@ on:
         options:
           - 'true'
           - 'false'
+      deploy_external_image:
+        description: 'Deploy an external Docker Hub image directly to AKS'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      external_image_ref:
+        description: 'External Docker Hub image to deploy for runtime evidence'
+        required: false
+        default: 'nginx:1.25.3'
+        type: string
 
 env:
   ACR_NAME: c2cscenarioacr
@@ -19,6 +32,7 @@ env:
   RESOURCE_GROUP: c2cscenario-rg
   AKS_CLUSTER: c2cscenario-aks
   K8S_NAMESPACE: c2c-scenarios
+  EXTERNAL_DEPLOYMENT: external-nginx
 
 jobs:
   build-push-deploy:
@@ -274,7 +288,7 @@ jobs:
       
       # Step 11: Set AKS context for kubectl commands (conditional)
       - name: Set AKS Context
-        if: github.event.inputs.deploy_to_aks == 'true'
+        if: github.event.inputs.deploy_to_aks == 'true' || github.event.inputs.deploy_external_image == 'true'
         uses: azure/aks-set-context@v4
         with:
           cluster-name: ${{ env.AKS_CLUSTER }}
@@ -312,10 +326,72 @@ jobs:
             --timeout=120s
           
           echo "✅ Both deployments complete using digest-based image references"
+
+      # Step 13: Deploy a Docker Hub image directly to AKS to validate external image/runtime cards.
+      # This image is intentionally not built from this repo and not pushed through ACR.
+      - name: Deploy External Docker Hub Image to AKS
+        if: github.event.inputs.deploy_external_image == 'true'
+        run: |
+          EXTERNAL_IMAGE='${{ github.event.inputs.external_image_ref || 'nginx:1.25.3' }}'
+
+          echo "Pulling external Docker Hub image: $EXTERNAL_IMAGE"
+          docker pull "$EXTERNAL_IMAGE"
+
+          EXTERNAL_DIGEST_REF=$(docker inspect --format='{{index .RepoDigests 0}}' "$EXTERNAL_IMAGE")
+          if [ -z "$EXTERNAL_DIGEST_REF" ] || [ "$EXTERNAL_DIGEST_REF" = "<no value>" ]; then
+            echo "::error::Could not resolve digest for external image $EXTERNAL_IMAGE"
+            exit 1
+          fi
+
+          kubectl delete deployment external-haproxy \
+            -n ${{ env.K8S_NAMESPACE }} \
+            --ignore-not-found
+
+          kubectl create deployment ${{ env.EXTERNAL_DEPLOYMENT }} \
+            --image="$EXTERNAL_DIGEST_REF" \
+            -n ${{ env.K8S_NAMESPACE }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl label deployment/${{ env.EXTERNAL_DEPLOYMENT }} \
+            -n ${{ env.K8S_NAMESPACE }} \
+            c2c.scenario=external-dockerhub-runtime \
+            c2c.source=dockerhub \
+            c2c.workflow-run=${{ github.run_id }} \
+            app.kubernetes.io/name=${{ env.EXTERNAL_DEPLOYMENT }} \
+            --overwrite
+
+          kubectl annotate deployment/${{ env.EXTERNAL_DEPLOYMENT }} \
+            -n ${{ env.K8S_NAMESPACE }} \
+            c2c.github.repository='${{ github.repository }}' \
+            c2c.github.workflow-run='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' \
+            c2c.external.image.tag="$EXTERNAL_IMAGE" \
+            c2c.external.image.digest="$EXTERNAL_DIGEST_REF" \
+            --overwrite
+
+          kubectl rollout status deployment/${{ env.EXTERNAL_DEPLOYMENT }} \
+            -n ${{ env.K8S_NAMESPACE }} \
+            --timeout=120s
+
+          echo "EXTERNAL_IMAGE_TAG=$EXTERNAL_IMAGE" >> $GITHUB_ENV
+          echo "EXTERNAL_IMAGE_DIGEST_REF=$EXTERNAL_DIGEST_REF" >> $GITHUB_ENV
+
+          echo "============================================"
+          echo "C2C EXTERNAL IMAGE RUNTIME SUMMARY"
+          echo "============================================"
+          echo "Repository:       ${{ github.repository }}"
+          echo "Workflow Run:     ${{ github.run_id }}"
+          echo "Tenant:           d3ee9058-38c3-4999-aa21-299aa7e046c9"
+          echo "Deployment:       ${{ env.EXTERNAL_DEPLOYMENT }}"
+          echo "Namespace:        ${{ env.K8S_NAMESPACE }}"
+          echo "External image:   $EXTERNAL_IMAGE"
+          echo "Digest reference: $EXTERNAL_DIGEST_REF"
+          echo "Source:           Docker Hub"
+          echo "Expected signal:  external container image/runtime recommendation"
+          echo "============================================"
       
       # Step 13: Verify both deployed pods use the exact image URI/digest
       - name: Verify Deployment
-        if: github.event.inputs.deploy_to_aks == 'true'
+        if: github.event.inputs.deploy_to_aks == 'true' || github.event.inputs.deploy_external_image == 'true'
         run: |
           echo "📋 Running pod information:"
           kubectl get pods -n ${{ env.K8S_NAMESPACE }} -o wide
@@ -335,6 +411,11 @@ jobs:
           
           # Verify digests for both deployments
           for DEPLOY in vuln-app vuln-api; do
+            if ! kubectl get deployment $DEPLOY -n ${{ env.K8S_NAMESPACE }} >/dev/null 2>&1; then
+              echo "⏭️  $DEPLOY is not deployed in this run"
+              continue
+            fi
+
             DEPLOYED_IMAGE=$(kubectl get deployment $DEPLOY \
               -n ${{ env.K8S_NAMESPACE }} \
               -o jsonpath='{.spec.template.spec.containers[0].image}')
@@ -345,6 +426,15 @@ jobs:
               echo "⚠️  Warning: $DEPLOY uses tag-based reference"
             fi
           done
+
+          if kubectl get deployment ${{ env.EXTERNAL_DEPLOYMENT }} -n ${{ env.K8S_NAMESPACE }} >/dev/null 2>&1; then
+            echo ""
+            echo "  external Docker Hub image:"
+            kubectl get deployment ${{ env.EXTERNAL_DEPLOYMENT }} \
+              -n ${{ env.K8S_NAMESPACE }} \
+              -o jsonpath='{.spec.template.spec.containers[0].image}'
+            echo ""
+          fi
       
       # Step 14: Export outputs for GitHub UI and downstream jobs
       - name: Export Outputs
@@ -390,9 +480,18 @@ jobs:
           
           ### Deployment Status
           - **AKS Deployment**: ${{ github.event.inputs.deploy_to_aks == 'true' && '✅ Enabled' || '⏭️  Skipped' }}
+          - **External Docker Hub Runtime Deployment**: ${{ github.event.inputs.deploy_external_image == 'true' && '✅ Enabled' || '⏭️  Skipped' }}
           - **Cluster**: \`${{ env.AKS_CLUSTER }}\`
           - **Namespace**: \`${{ env.K8S_NAMESPACE }}\`
-          - **Deployments**: vuln-app, vuln-api
+          - **Deployments**: vuln-app, vuln-api, ${{ env.EXTERNAL_DEPLOYMENT }}
+
+          ### External Docker Hub Runtime Scenario
+          | Property | Value |
+          |----------|-------|
+          | **Image tag** | \`${{ github.event.inputs.external_image_ref || 'nginx:1.25.3' }}\` |
+          | **Resolved digest** | \`${{ env.EXTERNAL_IMAGE_DIGEST_REF || 'resolved during external deployment step' }}\` |
+          | **Deployment** | \`${{ env.EXTERNAL_DEPLOYMENT }}\` |
+          | **Purpose** | Validate external container image/runtime recommendations not backed by repo-built ACR image |
           
           ---
           
